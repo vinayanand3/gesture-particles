@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Single Hand Energy Core</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Modern Gesture Particles</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -12,9 +12,10 @@
         body {
             margin: 0;
             padding: 0;
-            background: #050505;
+            background: #000; /* Pure black for better contrast */
             overflow: hidden;
             font-family: 'Segoe UI', sans-serif;
+            touch-action: none; /* Prevent pull-to-refresh on mobile */
         }
 
         canvas {
@@ -32,25 +33,29 @@
             bottom: 40px;
             width: 100%;
             text-align: center;
-            color: rgba(255, 255, 255, 0.5);
+            color: rgba(255, 255, 255, 0.6);
             pointer-events: none;
             z-index: 3;
             text-transform: uppercase;
             letter-spacing: 2px;
-            font-size: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-shadow: 0 0 10px rgba(0,0,0,0.5);
         }
 
         .status-indicator {
             display: inline-block;
             width: 8px;
             height: 8px;
-            background: #444;
+            background: #555;
             border-radius: 50%;
             margin-right: 8px;
+            vertical-align: middle;
+            transition: all 0.3s ease;
         }
         .active .status-indicator {
-            background: #00ffcc;
-            box-shadow: 0 0 10px #00ffcc;
+            background: #00ffea; /* Neon cyan */
+            box-shadow: 0 0 15px #00ffea, 0 0 5px #fff;
         }
     </style>
 </head>
@@ -58,21 +63,22 @@
 
 <div class="hud" id="hud">
     <span class="status-indicator"></span>
-    <span id="status-text">Loading Vision...</span>
+    <span id="status-text">Initializing AI Vision...</span>
 </div>
 
-<video id="input_video"></video>
+<video id="input_video" playsinline></video>
 <canvas id="canvas"></canvas>
 
 <script>
     // --- CONFIGURATION ---
     const CONFIG = {
-        baseHue: 210,         // Electric Blue
-        hueShift: 50,         // Color shift on expansion
-        drag: 0.94,           // Air resistance
-        minSpread: 10,        // Radius when pinched (compressed)
-        maxSpread: 250,       // Radius when open (expanded)
-        particleCount: 12     // Particles per frame
+        baseHue: 220,         // Deep Electric Blue
+        hueShift: 60,         // Shifts to purple/pink on expansion
+        drag: 0.95,           // Slightly less drag for flow
+        minSpread: 15,        // Core size when pinched
+        maxSpread: 300,       // Explosion size when open
+        particleCount: 15,    // More particles for a denser look
+        trailFade: 0.1        // Lower = Longer trails (0.1 is good for long streaks)
     };
 
     // --- SETUP CANVAS ---
@@ -80,9 +86,13 @@
     const ctx = canvas.getContext('2d');
     let w, h;
 
+    // Handle resizing and high-DPI displays
     function resize() {
-        w = canvas.width = window.innerWidth;
-        h = canvas.height = window.innerHeight;
+        w = window.innerWidth;
+        h = window.innerHeight;
+        canvas.width = w * window.devicePixelRatio;
+        canvas.height = h * window.devicePixelRatio;
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
     }
     window.addEventListener('resize', resize);
     resize();
@@ -90,64 +100,70 @@
     // --- STATE ---
     let particles = [];
     let hand = { x: w/2, y: h/2, detected: false };
-    let pinchDistance = 0; // 0 (Close) to 1 (Far)
-    let tension = 0;       // 1 (High Tension/Pinch) to 0 (Relaxed/Open)
+    let pinchDistance = 0;
+    let tension = 0;
 
     // --- UTILS ---
     const random = (min, max) => Math.random() * (max - min) + min;
 
-    // --- PARTICLE CLASS ---
+    // --- MODERN PARTICLE CLASS ---
     class Particle {
         constructor(x, y, tensionVal) {
             this.x = x;
             this.y = y;
             
-            // PHYSICS MAPPING:
-            // High Tension (Pinch) = Fast vibration, short life, white/cyan color
-            // Low Tension (Open) = High speed, long life, purple/blue color
-            
             const angle = random(0, Math.PI * 2);
-            
-            // If tension is high, particles are explosive but contained
-            const speed = 2 + (random(0, 5) * (1 - tensionVal)); 
+            // Higher tension = faster, more chaotic bursts
+            const speed = random(2, 5) + (tensionVal * 8); 
             
             this.vx = Math.cos(angle) * speed;
             this.vy = Math.sin(angle) * speed;
             
             this.life = 1;
-            // Decay is faster when high tension (fizzling out)
-            this.decay = random(0.01, 0.04) + (tensionVal * 0.05); 
-            
-            // COLOR MAPPING:
-            // Tension 1 = White/Cyan. Tension 0 = Deep Purple.
-            const hue = CONFIG.baseHue + ((1 - tensionVal) * CONFIG.hueShift);
-            const saturation = 80 + (tensionVal * 20); // More saturation when pinched
-            const lightness = 50 + (tensionVal * 40);  // Brighter when pinched
-            
-            this.color = `hsla(${hue}, ${saturation}%, ${lightness}%,`;
+            // High tension particles burn out faster
+            this.decay = random(0.015, 0.03) + (tensionVal * 0.04); 
+
+            // Base size
+            this.size = random(2, 5) + (tensionVal * 2);
+
+            // Color components for gradient
+            this.hue = CONFIG.baseHue + ((1 - tensionVal) * CONFIG.hueShift);
+            this.sat = 90 + (tensionVal * 10); // Super vibrant
+            this.light = 55 + (tensionVal * 25); // Brighter when pinched
         }
 
         update() {
             this.x += this.vx;
             this.y += this.vy;
             
-            // Add jitter if high tension
-            if(tension > 0.8) {
-                this.x += random(-2, 2);
-                this.y += random(-2, 2);
+            // Add vibration/jitter at high tension
+            if(tension > 0.7) {
+                this.x += random(-3, 3) * tension;
+                this.y += random(-3, 3) * tension;
             }
 
             this.vx *= CONFIG.drag;
             this.vy *= CONFIG.drag;
-            
             this.life -= this.decay;
         }
 
+        // THE MODERN GLOW DRAWING METHOD
         draw() {
-            ctx.fillStyle = this.color + this.life + ')';
+            // Create a radial gradient for a glowing orb effect
+            // Inner circle is bright, outer is transparent
+            const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size * 2);
+            
+            // Hot, bright core (almost white)
+            gradient.addColorStop(0, `hsla(${this.hue}, 100%, 95%, ${this.life})`);
+            // Mid-tone color
+            gradient.addColorStop(0.4, `hsla(${this.hue}, ${this.sat}%, ${this.light}%, ${this.life * 0.8})`);
+            // Fade to transparent at edges
+            gradient.addColorStop(1, `hsla(${this.hue}, ${this.sat}%, ${this.light}%, 0)`);
+
+            ctx.fillStyle = gradient;
             ctx.beginPath();
-            // Particles are smaller when compressed
-            ctx.arc(this.x, this.y, random(1, 3), 0, Math.PI * 2);
+            // Draw a circle larger than the core to hold the glow
+            ctx.arc(this.x, this.y, this.size * 2, 0, Math.PI * 2);
             ctx.fill();
         }
     }
@@ -156,41 +172,35 @@
     function loop() {
         requestAnimationFrame(loop);
 
-        // 1. Clear Screen (Trails)
+        // 1. Create Trails (Clear screen with high transparency black)
         ctx.globalCompositeOperation = 'source-over';
-        ctx.fillStyle = 'rgba(5, 5, 5, 0.2)';
+        ctx.fillStyle = `rgba(0, 0, 0, ${CONFIG.trailFade})`;
         ctx.fillRect(0, 0, w, h);
 
-        // 2. Logic
+        // 2. Update Logic
         let spawnX = w / 2;
         let spawnY = h / 2;
         
         if (hand.detected) {
             spawnX = hand.x;
             spawnY = hand.y;
-            
-            // Map pinch distance (pixels) to a 0-1 scale
-            // Usually 0px is closed, ~150px is fully open
-            let normalizedPinch = Math.min(Math.max(pinchDistance / 150, 0), 1);
-            
-            // Tension is inverse of distance (Close = High Tension)
+            let normalizedPinch = Math.min(Math.max(pinchDistance / 180, 0), 1);
             tension = 1 - normalizedPinch;
         } else {
-            // Idle animation
-            tension = 0.5 + Math.sin(Date.now() / 300) * 0.5;
-            spawnY += Math.sin(Date.now() / 1000) * 50;
+            // Idle demo mode
+            tension = 0.5 + Math.sin(Date.now() / 400) * 0.5;
+            spawnX += Math.cos(Date.now() / 1200) * 80;
+            spawnY += Math.sin(Date.now() / 1500) * 50;
         }
 
-        // 3. Spawn Particles
-        // Spawn more when high tension
-        let count = CONFIG.particleCount + (tension * 10);
+        // 3. Spawn New Particles
+        let count = CONFIG.particleCount + Math.floor(tension * 15);
         
         for(let k = 0; k < count; k++) {
-            // Spawn radius logic
-            // High Tension = Spawn very close to center (Compression)
-            // Low Tension = Spawn in a wider area
-            let spawnRadius = CONFIG.minSpread + ((1 - tension) * 20); 
-            let r = random(0, spawnRadius);
+            // Spawn in a volume depending on tension
+            let spawnRadius = CONFIG.minSpread + ((1 - tension) * 30);
+            // Power of 0.5 clusters them more toward center for a better look
+            let r = Math.pow(random(0, 1), 0.5) * spawnRadius;
             let theta = random(0, Math.PI * 2);
             
             let px = spawnX + Math.cos(theta) * r;
@@ -199,44 +209,35 @@
             particles.push(new Particle(px, py, tension));
         }
 
-        // 4. Draw Particles
+        // 4. Draw All Particles
+        // Crucial for glowing effect: Additive Blending
         ctx.globalCompositeOperation = 'lighter';
         
         for (let i = particles.length - 1; i >= 0; i--) {
             let p = particles[i];
             p.update();
-            p.draw();
             
-            // Physics Constraint:
-            // If tension is high, kill particles that go too far (Containment Field)
-            if(tension > 0.5) {
+            // Physics Constraint (Containment Field)
+            if(tension > 0.4) {
                 let dx = p.x - spawnX;
                 let dy = p.y - spawnY;
                 let dist = Math.sqrt(dx*dx + dy*dy);
-                // The allowed radius grows as you open your hand
-                let limit = CONFIG.minSpread + (pinchDistance * 2); 
+                let limit = CONFIG.minSpread + (pinchDistance * 1.2) + 20; 
                 
                 if(dist > limit) {
-                    p.life -= 0.1; // Kill instantly if outside containment
+                    p.life -= 0.15; // Kill quickly if outside the energy field
                 }
             }
             
-            if (p.life <= 0) particles.splice(i, 1);
-        }
-
-        // 5. Visual Guide (Ring around finger)
-        if(hand.detected) {
-            ctx.strokeStyle = `rgba(255, 255, 255, ${0.1 + tension * 0.5})`;
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            // Ring size matches the "containment" field
-            let ringSize = CONFIG.minSpread + (pinchDistance * 1.5);
-            ctx.arc(spawnX, spawnY, ringSize, 0, Math.PI * 2);
-            ctx.stroke();
+            if (p.life <= 0) {
+                particles.splice(i, 1);
+            } else {
+                p.draw();
+            }
         }
     }
 
-    // --- MEDIAPIPE HANDS ---
+    // --- MEDIAPIPE HANDS SETUP ---
     const videoElement = document.getElementById('input_video');
     const hud = document.getElementById('hud');
     const statusText = document.getElementById('status-text');
@@ -248,33 +249,36 @@
 
             const landmarks = results.multiHandLandmarks[0];
             
-            // Index Finger Tip (8) position
-            hand.x = (1 - landmarks[8].x) * w;
-            hand.y = landmarks[8].y * h;
+            // Use Index Finger MCP (knuckle) for more stable center
+            hand.x = (1 - landmarks[5].x) * w;
+            hand.y = landmarks[5].y * h;
 
-            // Calculate Pinch (Distance between Index Tip 8 and Thumb Tip 4)
+            // Calculate Pinch: Distance between Thumb Tip (4) and Index Tip (8)
             const dx = (landmarks[8].x - landmarks[4].x) * w;
             const dy = (landmarks[8].y - landmarks[4].y) * h;
             let dist = Math.sqrt(dx*dx + dy*dy);
             
-            // Smooth the value slightly
-            pinchDistance = (pinchDistance * 0.8) + (dist * 0.2);
+            // Smooth the pinch value
+            pinchDistance = (pinchDistance * 0.7) + (dist * 0.3);
 
-            if(tension > 0.8) statusText.innerText = "Compressed - High Energy";
-            else statusText.innerText = "Expanded - Releasing";
+            // Update HUD text based on state
+            if(tension > 0.85) statusText.innerText = "⚡ HIGH ENERGY CORE ⚡";
+            else if(tension < 0.2) statusText.innerText = "• EXPANDED FLOW •";
+            else statusText.innerText = "Gestures Active: Pinch to Charge";
 
         } else {
             hand.detected = false;
             hud.classList.remove('active');
-            statusText.innerText = "Raise one hand";
+            statusText.innerText = "Place hand in view";
         }
     }
 
     const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
 
+    // Optimized settings for mobile performance
     hands.setOptions({
         maxNumHands: 1,
-        modelComplexity: 1,
+        modelComplexity: 0, // Faster model for mobile
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
     });
@@ -283,12 +287,13 @@
 
     const camera = new Camera(videoElement, {
         onFrame: async () => { await hands.send({image: videoElement}); },
-        width: 640,
-        height: 480
+        width: 480, // Lower res for faster processing
+        height: 360,
+        facingMode: 'user' // Prefer front camera
     });
 
     camera.start();
-    loop();
+    loop(); // Start animation loop
 
 </script>
 </body>
