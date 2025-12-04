@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Saturn: Zoom & Rotate</title>
+    <title>Saturn: Y-Axis Spin Only</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -15,19 +15,23 @@
         }
 
         .hud-panel {
-            background: rgba(10, 15, 20, 0.6);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(10, 15, 20, 0.75);
+            border: 1px solid rgba(100, 200, 255, 0.2);
             border-radius: 40px;
-            padding: 15px 30px;
-            backdrop-filter: blur(10px);
+            padding: 15px 40px;
+            backdrop-filter: blur(12px);
             color: #fff;
-            display: flex; gap: 20px; align-items: center;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex; gap: 30px; align-items: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
         }
 
         .stat-group { text-align: center; }
         .stat-label { font-size: 10px; color: #888; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; }
-        .stat-value { font-size: 14px; font-weight: 600; color: #00ff88; font-variant-numeric: tabular-nums;}
+        .stat-value { font-size: 14px; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums; min-width: 60px;}
+
+        /* Physics Colors */
+        .fast-speed { color: #ff5555; text-shadow: 0 0 10px rgba(255, 85, 85, 0.5); }
+        .slow-speed { color: #00ff88; text-shadow: 0 0 10px rgba(0, 255, 136, 0.5); }
 
         /* Loader */
         #loader {
@@ -60,20 +64,23 @@
     <div id="ui-container">
         <div class="hud-panel">
             <div class="stat-group">
-                <div class="stat-label">System</div>
-                <div class="stat-value" id="status-text">INITIALIZING</div>
-            </div>
-            <div style="width: 1px; height: 25px; background: rgba(255,255,255,0.2);"></div>
-            <div class="stat-group">
                 <div class="stat-label">Zoom</div>
                 <div class="stat-value" id="zoom-val">1.0x</div>
             </div>
-            <div class="stat-group">
-                <div class="stat-label">Rotation</div>
-                <div class="stat-value" id="rot-val">IDLE</div>
-            </div>
+            
             <div style="width: 1px; height: 25px; background: rgba(255,255,255,0.2);"></div>
-            <input type="color" id="colorPicker" value="#aaddff" style="width:30px; height:30px; border:none; background:none; cursor:pointer;">
+            
+            <div class="stat-group">
+                <div class="stat-label">Spin Speed</div>
+                <div class="stat-value slow-speed" id="speed-val">100%</div>
+            </div>
+
+            <div style="width: 1px; height: 25px; background: rgba(255,255,255,0.2);"></div>
+
+            <div class="stat-group">
+                <div class="stat-label">Status</div>
+                <div class="stat-value" id="status-text" style="font-size:11px; color:#888;">INITIALIZING</div>
+            </div>
         </div>
     </div>
 
@@ -96,14 +103,10 @@
         void main() {
             vec3 pos = position * uScale;
             
-            // Internal wave motion (independent of system rotation)
-            float angle = uTime * 0.1 * aRandom;
-            float s = sin(angle);
-            float c = cos(angle);
-            
             // Warp effect when scaling up
             if(uScale > 3.0) {
-                pos.z += sin(uTime * 10.0 + pos.x) * 0.5;
+                float dist = length(pos.xy);
+                pos.z += sin(dist * 0.1 - uTime * 2.0) * 0.5 * (uScale - 1.0);
             }
 
             vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
@@ -144,16 +147,12 @@
 
     <script>
         // --- CONFIG ---
-        const config = {
-            count: 65000,
-            camZ: 40,
-            color: "#aaddff"
-        };
+        const config = { count: 65000, camZ: 40, color: "#aaddff" };
 
         const loader = document.getElementById('loader');
         const statusText = document.getElementById('status-text');
         const zoomVal = document.getElementById('zoom-val');
-        const rotVal = document.getElementById('rot-val');
+        const speedVal = document.getElementById('speed-val');
 
         // --- THREE.JS ---
         const scene = new THREE.Scene();
@@ -180,30 +179,24 @@
             if(r < 0.65) { // RINGS
                 const angle = Math.random() * Math.PI * 2;
                 const dist = Math.random() > 0.4 ? 14 + Math.random() * 9 : 10 + Math.random() * 2;
-                x = Math.cos(angle) * dist;
-                z = Math.sin(angle) * dist;
-                y = (Math.random() - 0.5) * 0.3;
+                x = Math.cos(angle) * dist; z = Math.sin(angle) * dist; y = (Math.random() - 0.5) * 0.3;
                 size = Math.random() * 2.5;
             } else if (r < 0.80) { // PLANET
                 const theta = Math.random() * Math.PI * 2;
                 const phi = Math.acos((Math.random() * 2) - 1);
                 const rad = 7.5;
-                x = rad * Math.sin(phi) * Math.cos(theta);
-                y = rad * Math.sin(phi) * Math.sin(theta);
-                z = rad * Math.cos(phi);
+                x = rad * Math.sin(phi) * Math.cos(theta); y = rad * Math.sin(phi) * Math.sin(theta); z = rad * Math.cos(phi);
                 size = Math.random() * 3.0;
             } else { // DUST
                 const theta = Math.random() * Math.PI * 2;
                 const phi = Math.acos((Math.random() * 2) - 1);
                 const rad = Math.random() * 60;
-                x = rad * Math.sin(phi) * Math.cos(theta);
-                y = rad * Math.sin(phi) * Math.sin(theta);
-                z = rad * Math.cos(phi);
+                x = rad * Math.sin(phi) * Math.cos(theta); y = rad * Math.sin(phi) * Math.sin(theta); z = rad * Math.cos(phi);
                 size = Math.random();
             }
 
-            // Initial Tilt
-            const tilt = 0.3;
+            // Initial Tilt (Applied to geometry so it persists without X-axis rotation)
+            const tilt = 0.4;
             const ty = y; y = y * Math.cos(tilt) - z * Math.sin(tilt); z = ty * Math.sin(tilt) + z * Math.cos(tilt);
 
             positions[i*3] = x; positions[i*3+1] = y; positions[i*3+2] = z;
@@ -233,11 +226,7 @@
         let targetScale = 1.0;
         let currentScale = 1.0;
         let smoothedPinch = 0;
-        
-        // Rotation Velocity
-        let rotVelX = 0;
         let rotVelY = 0;
-        let targetRotVelX = 0;
         let targetRotVelY = 0;
 
         // --- MEDIAPIPE ---
@@ -258,7 +247,7 @@
             }
 
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                statusText.innerText = "TRACKING ACTIVE";
+                statusText.innerText = "ONLINE";
                 statusText.style.color = "#00ff88";
 
                 const lm = results.multiHandLandmarks[0];
@@ -266,58 +255,38 @@
                 const indexBase = lm[5];
                 const thumbTip = lm[4];
                 const indexTip = lm[8];
-                const handCenter = lm[9]; // Middle finger knuckle
+                const handCenter = lm[9]; 
 
-                // --- 1. ROTATION (JOYSTICK LOGIC) ---
-                // X: 0 (Left) -> 1 (Right). Center is 0.5
-                // Y: 0 (Top) -> 1 (Bottom). Center is 0.5
+                // --- ROTATION (X-AXIS INPUT -> Y-AXIS SPIN) ---
+                const xOffset = (1.0 - handCenter.x) - 0.5; // Flip X for mirror effect
                 
-                // Calculate offset from center (Deadzone 0.1)
-                const xOffset = (1.0 - handCenter.x) - 0.5; // Flip X because webcam is mirrored
-                const yOffset = handCenter.y - 0.5;
-
-                // Threshold to stop rotation if hand is centered
-                const deadzone = 0.1;
+                // Deadzone
+                const deadzone = 0.08;
                 
                 if (Math.abs(xOffset) > deadzone) {
-                    targetRotVelY = xOffset * 0.05; // Spin speed
-                    rotVal.innerText = xOffset > 0 ? "SPIN RIGHT" : "SPIN LEFT";
+                    targetRotVelY = xOffset * 0.08; 
                 } else {
                     targetRotVelY = 0;
-                    rotVal.innerText = "HOLDING Y";
                 }
+                
+                // Note: We intentionally IGNORE Y-Offset (Hand up/down) to prevent rolling.
 
-                if (Math.abs(yOffset) > deadzone) {
-                    targetRotVelX = yOffset * 0.05; // Tilt speed
-                } else {
-                    targetRotVelX = 0;
-                }
-
-                // --- 2. ZOOM (PINCH LOGIC) ---
+                // --- ZOOM (PINCH) ---
                 const pinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
                 const handSize = Math.hypot(wrist.x - indexBase.x, wrist.y - indexBase.y);
                 const normPinch = pinchDist / (handSize || 0.1);
 
                 smoothedPinch += (normPinch - smoothedPinch) * 0.15;
 
-                if (smoothedPinch < 0.25) {
-                    targetScale = 0.4; // Shrink
-                } else {
-                    targetScale = 1.0 + (smoothedPinch - 0.25) * 5.5; // Expand
-                }
-                
-                zoomVal.innerText = targetScale.toFixed(1) + "x";
+                if (smoothedPinch < 0.25) targetScale = 0.4; // Shrink
+                else targetScale = 1.0 + (smoothedPinch - 0.25) * 5.5; // Expand
 
             } else {
                 statusText.innerText = "SEARCHING...";
                 statusText.style.color = "#ffaa00";
-                rotVal.innerText = "AUTO PILOT";
                 
                 // Auto Idle Animation
                 targetRotVelY = 0.002;
-                targetRotVelX = Math.sin(Date.now() * 0.001) * 0.001;
-                
-                // Breathe
                 targetScale = 1.0 + Math.sin(Date.now() * 0.0005) * 0.1;
             }
         });
@@ -328,29 +297,39 @@
         });
         cameraUtils.start();
 
-        document.getElementById('colorPicker').addEventListener('input', (e) => {
-            material.uniforms.uColor.value.set(e.target.value);
-        });
-
-        // --- ANIMATION ---
+        // --- ANIMATION LOOP ---
         const clock = new THREE.Clock();
 
         function animate() {
             requestAnimationFrame(animate);
             const time = clock.getElapsedTime();
 
-            // Smooth Stats
+            // 1. Smooth Scale
             currentScale += (targetScale - currentScale) * 0.08;
-            rotVelX += (targetRotVelX - rotVelX) * 0.05;
+
+            // 2. Physics Factor (Slower spin when zoomed in)
+            let physicsFactor = 1.0 / Math.max(1.0, currentScale * 1.5);
+
+            // 3. Smooth Rotation Velocity
             rotVelY += (targetRotVelY - rotVelY) * 0.05;
 
-            // Apply Rotation
-            particles.rotation.y += rotVelY;
-            particles.rotation.x += rotVelX;
+            // 4. Apply Rotation (ONLY Y-AXIS)
+            particles.rotation.y += rotVelY * physicsFactor;
+            
+            // Note: particles.rotation.x is NOT updated, preventing tumbling.
 
-            // Update Shader
+            // 5. Update Shader
             material.uniforms.uTime.value = time;
             material.uniforms.uScale.value = currentScale;
+
+            // 6. Update UI
+            zoomVal.innerText = currentScale.toFixed(1) + "x";
+            
+            const speedPercent = Math.round(physicsFactor * 100);
+            speedVal.innerText = speedPercent + "%";
+            
+            if(speedPercent < 40) speedVal.className = "stat-value slow-speed";
+            else speedVal.className = "stat-value fast-speed";
 
             renderer.render(scene, camera);
         }
